@@ -1,0 +1,6 @@
+name: ipcam
+display_name: ipcam # 用于展示的名字，可以是方便人类阅读的名字（需要版本 >= v4.5.0，低版本不会报错，请放心填写）
+desc: 通过AstrBot实现ipcam图像或视频内容捕获。 # 插件简短描述
+version: v0.1.0 # 插件版本号。格式：v1.1.1 或者 v1.1
+author: WhEN # 作者
+repo:  # 插件的仓库地址
