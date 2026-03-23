@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IPCAM 插件配置</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+        
+        .content {
+            padding: 30px;
+        }
+        
+        .form-group {
+            margin-bottom: 25px;
+        }
+        
+        .form-group label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #333;
+            font-size: 16px;
+        }
+        
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: all 0.3s ease;
+        }
+        
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        .form-group .help-text {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+        
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        
+        .preview-section {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 25px;
+        }
+        
+        .preview-section h3 {
+            font-size: 16px;
+            margin-bottom: 15px;
+            color: #333;
+        }
+        
+        .status-indicator {
+            display: inline-flex;
+            align-items: center;
+            padding: 8px 15px;
+            background: #e8f5e9;
+            border-radius: 20px;
+            font-size: 14px;
+            color: #2e7d32;
+        }
+        
+        .status-indicator.error {
+            background: #ffebee;
+            color: #c62828;
+        }
+        
+        .btn {
+            padding: 12px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-right: 10px;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-secondary {
+            background: #e0e0e0;
+            color: #333;
+        }
+        
+        .btn-secondary:hover {
+            background: #d0d0d0;
+        }
+        
+        .button-group {
+            display: flex;
+            justify-content: center;
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #e0e0e0;
+        }
+        
+        .toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 15px 25px;
+            background: #4caf50;
+            color: white;
+            border-radius: 8px;
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.2);
+            transform: translateX(400px);
+            transition: transform 0.3s ease;
+            z-index: 1000;
+        }
+        
+        .toast.show {
+            transform: translateX(0);
+        }
+        
+        .toast.error {
+            background: #f44336;
+        }
+        
+        .video-quality-info {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 10px;
+        }
+        
+        .video-quality-info code {
+            background: rgba(0, 0, 0, 0.1);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+        }
+        
+        @media (max-width: 600px) {
+            .form-row {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📹 IPCAM 插件配置</h1>
+            <p>通过 AstrBot 实现 RTSP 视频流捕获</p>
+        </div>
+        
+        <div class="content">
+            <form id="configForm">
+                <!-- 视频流配置 -->
+                <div class="form-group">
+                    <label for="stream_url">🎥 视频流地址 (RTSP URL)</label>
+                    <input type="text" id="stream_url" name="stream_url" 
+                           placeholder="rtsp://192.168.1.4:8554/live"
+                           value="{{ config.stream_url }}">
+                    <div class="help-text">
+                        示例: <code>rtsp://192.168.1.4:8554/live</code> 或 <code>rtsp://user:pass@192.168.1.4:8554/stream1</code>
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <!-- 连接超时 -->
+                    <div class="form-group">
+                        <label for="connection_timeout">⏱️ 连接超时 (秒)</label>
+                        <input type="number" id="connection_timeout" name="connection_timeout" 
+                               min="1" max="60" value="{{ config.connection_timeout }}">
+                        <div class="help-text">视频流连接超时时间 (1-60秒)</div>
+                    </div>
+                    
+                    <!-- 读取超时 -->
+                    <div class="form-group">
+                        <label for="read_timeout">📡 读取超时 (秒)</label>
+                        <input type="number" id="read_timeout" name="read_timeout" 
+                               min="1" max="60" value="{{ config.read_timeout }}">
+                        <div class="help-text">视频流读取超时时间 (1-60秒)</div>
+                    </div>
+                </div>
+                
+                <!-- 视频录制配置 -->
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="video_duration">🎬 默认录制时长 (秒)</label>
+                        <input type="number" id="video_duration" name="video_duration" 
+                               min="1" max="300" value="{{ config.video_duration }}">
+                        <div class="help-text">录制视频的默认时长 (1-300秒)</div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="video_codec">📹 视频编码格式</label>
+                        <select id="video_codec" name="video_codec">
+                            <option value="mp4v" {% if config.video_codec == 'mp4v' %}selected{% endif %}>MP4V (H.264) - 推荐</option>
+                            <option value="avc1" {% if config.video_codec == 'avc1' %}selected{% endif %}>AVC1 (H.264)</option>
+                            <option value="MJPG" {% if config.video_codec == 'MJPG' %}selected{% endif %}>MJPEG (兼容性)</option>
+                            <option value="XVID" {% if config.video_codec == 'XVID' %}selected{% endif %}>XVID</option>
+                        </select>
+                        <div class="help-text">视频编码格式，MP4V 兼容性最好</div>
+                    </div>
+                </div>
+                
+                <!-- 图片配置 -->
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="image_quality">🖼️ 图片质量 (1-100)</label>
+                        <input type="number" id="image_quality" name="image_quality" 
+                               min="1" max="100" value="{{ config.image_quality }}">
+                        <div class="help-text">JPEG 压缩质量，数值越大质量越高</div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="image_width">📐 图片宽度 (像素)</label>
+                        <input type="number" id="image_width" name="image_width" 
+                               min="0" max="4096" value="{{ config.image_width }}"
+                               placeholder="0 = 不调整">
+                        <div class="help-text">0 表示保持原始尺寸</div>
+                    </div>
+                </div>
+                
+                <!-- 高级选项 -->
+                <div class="preview-section">
+                    <h3>🔧 高级选项</h3>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="auto_cleanup">🧹 自动清理文件</label>
+                            <select id="auto_cleanup" name="auto_cleanup">
+                                <option value="true" {% if config.auto_cleanup %}selected{% endif %}>是</option>
+                                <option value="false" {% if not config.auto_cleanup %}selected{% endif %}>否</option>
+                            </select>
+                            <div class="help-text">发送后自动删除本地文件</div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="enable_logging">📝 启用日志</label>
+                            <select id="enable_logging" name="enable_logging">
+                                <option value="true" {% if config.enable_logging %}selected{% endif %}>是</option>
+                                <option value="false" {% if not config.enable_logging %}selected{% endif %}>否</option>
+                            </select>
+                            <div class="help-text">记录详细操作日志</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 测试连接 -->
+                <div class="preview-section">
+                    <h3>🔍 连接测试</h3>
+                    <button type="button" class="btn btn-secondary" onclick="testConnection()">
+                        测试视频流连接
+                    </button>
+                    <div id="connectionStatus" style="margin-top: 10px;"></div>
+                </div>
+                
+                <!-- 保存按钮 -->
+                <div class="button-group">
+                    <button type="button" class="btn btn-secondary" onclick="resetConfig()">
+                        重置为默认
+                    </button>
+                    <button type="submit" class="btn btn-primary">
+                        💾 保存配置
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <div id="toast" class="toast"></div>
+    
+    <script>
+        // 保存配置
+        document.getElementById('configForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const formData = new FormData(e.target);
+            const config = {
+                stream_url: formData.get('stream_url'),
+                connection_timeout: parseInt(formData.get('connection_timeout')),
+                read_timeout: parseInt(formData.get('read_timeout')),
+                video_duration: parseInt(formData.get('video_duration')),
+                video_codec: formData.get('video_codec'),
+                image_quality: parseInt(formData.get('image_quality')),
+                image_width: parseInt(formData.get('image_width')),
+                auto_cleanup: formData.get('auto_cleanup') === 'true',
+                enable_logging: formData.get('enable_logging') === 'true'
+            };
+            
+            try {
+                const response = await fetch('/plugin/ipcam/save_config', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(config)
+                });
+                
+                if (response.ok) {
+                    showToast('✅ 配置保存成功！', false);
+                } else {
+                    throw new Error('保存失败');
+                }
+            } catch (error) {
+                showToast('❌ 保存失败: ' + error.message, true);
+            }
+        });
+        
+        // 测试连接
+        async function testConnection() {
+            const streamUrl = document.getElementById('stream_url').value;
+            const statusDiv = document.getElementById('connectionStatus');
+            
+            statusDiv.innerHTML = '<span style="color: #666;">⏳ 正在测试连接...</span>';
+            
+            try {
+                const response = await fetch('/plugin/ipcam/test_connection', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ stream_url: streamUrl })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    statusDiv.innerHTML = '<span class="status-indicator">✅ 连接成功！可以正常捕获视频流</span>';
+                } else {
+                    statusDiv.innerHTML = `<span class="status-indicator error">❌ 连接失败: ${result.message}</span>`;
+                }
+            } catch (error) {
+                statusDiv.innerHTML = `<span class="status-indicator error">❌ 测试失败: ${error.message}</span>`;
+            }
+        }
+        
+        // 重置配置
+        function resetConfig() {
+            if (confirm('确定要重置所有配置为默认值吗？')) {
+                const defaultConfig = {
+                    stream_url: 'rtsp://192.168.1.4:8554/live',
+                    connection_timeout: 5,
+                    read_timeout: 5,
+                    video_duration: 10,
+                    video_codec: 'mp4v',
+                    image_quality: 90,
+                    image_width: 0,
+                    auto_cleanup: true,
+                    enable_logging: true
+                };
+                
+                Object.keys(defaultConfig).forEach(key => {
+                    const input = document.querySelector(`[name="${key}"]`);
+                    if (input) {
+                        input.value = defaultConfig[key];
+                    }
+                });
+                
+                showToast('✅ 已重置为默认配置，请点击保存', false);
+            }
+        }
+        
+        // 显示提示
+        function showToast(message, isError = false) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = 'toast' + (isError ? ' error' : '');
+            toast.classList.add('show');
+            
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
