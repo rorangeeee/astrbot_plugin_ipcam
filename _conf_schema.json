@@ -3,7 +3,7 @@
         "name": "视频流地址",
         "description": "RTSP 视频流地址",
         "hint": "示例: rtsp://192.168.1.4:8554/live",
-        "type": "str",
+        "type": "string",
         "default": "rtsp://192.168.1.4:8554/live"
     },
     "connection_timeout": {
