@@ -1,0 +1,93 @@
+{
+    "stream_url": {
+        "name": "视频流地址",
+        "description": "RTSP 视频流地址",
+        "hint": "示例: rtsp://192.168.1.4:8554/live",
+        "type": "str",
+        "default": "rtsp://192.168.1.4:8554/live"
+    },
+    "connection_timeout": {
+        "name": "连接超时",
+        "description": "视频流连接超时时间",
+        "hint": "单位：秒，范围 1-60",
+        "type": "int",
+        "default": 5,
+        "min": 1,
+        "max": 60
+    },
+    "read_timeout": {
+        "name": "读取超时",
+        "description": "视频流读取超时时间",
+        "hint": "单位：秒，范围 1-60",
+        "type": "int",
+        "default": 5,
+        "min": 1,
+        "max": 60
+    },
+    "video_duration": {
+        "name": "录制时长",
+        "description": "录制视频的默认时长",
+        "hint": "单位：秒，范围 1-300",
+        "type": "int",
+        "default": 10,
+        "min": 1,
+        "max": 300
+    },
+    "video_codec": {
+        "name": "视频编码",
+        "description": "视频编码格式",
+        "hint": "推荐使用 mp4v (H.264)",
+        "type": "select",
+        "default": "mp4v",
+        "options": [
+            {
+                "label": "MP4V (H.264) - 推荐",
+                "value": "mp4v"
+            },
+            {
+                "label": "AVC1 (H.264)",
+                "value": "avc1"
+            },
+            {
+                "label": "MJPEG (兼容性)",
+                "value": "MJPG"
+            },
+            {
+                "label": "XVID",
+                "value": "XVID"
+            }
+        ]
+    },
+    "image_quality": {
+        "name": "图片质量",
+        "description": "JPEG 压缩质量",
+        "hint": "范围 1-100，数值越大质量越高",
+        "type": "int",
+        "default": 90,
+        "min": 1,
+        "max": 100
+    },
+    "image_width": {
+        "name": "图片宽度",
+        "description": "调整图片宽度",
+        "hint": "0 表示保持原始尺寸",
+        "type": "int",
+        "default": 0,
+        "min": 0,
+        "max": 4096
+    },
+    "auto_cleanup": {
+        "name": "自动清理",
+        "description": "发送后自动删除本地文件",
+        "hint": "建议开启以节省存储空间",
+        "type": "bool",
+        "default": true
+    },
+    "enable_logging": {
+        "name": "启用日志",
+        "description": "记录详细操作日志",
+        "hint": "开启后可查看更详细的日志信息",
+        "type": "bool",
+        "default": true
+    }
+}

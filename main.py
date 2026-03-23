@@ -2,73 +2,11 @@ import cv2
 import time
 import os
 import uuid
-import json
-from pathlib import Path
 from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult
 from astrbot.api.star import Context, Star, register
+from astrbot.api import AstrBotConfig
 from astrbot.api import logger
 
-# 默认配置
-DEFAULT_CONFIG = {
-    "stream_url": "rtsp://192.168.1.4:8554/live",
-    "connection_timeout": 5,
-    "read_timeout": 5,
-    "video_duration": 10,
-    "video_codec": "mp4v",
-    "image_quality": 90,
-    "image_width": 0,
-    "auto_cleanup": True,
-    "enable_logging": True
-}
-
-class PluginConfig:
-    """插件配置管理类"""
-    
-    def __init__(self, config_file="ipcam_config.json"):
-        self.config_file = Path(config_file)
-        self.config = self.load_config()
-    
-    def load_config(self):
-        """从文件加载配置"""
-        try:
-            if self.config_file.exists():
-                with open(self.config_file, 'r', encoding='utf-8') as f:
-                    config = json.load(f)
-                    # 合并默认配置，确保所有字段都存在
-                    return {**DEFAULT_CONFIG, **config}
-            else:
-                # 如果配置文件不存在，创建默认配置
-                self.save_config(DEFAULT_CONFIG)
-                return DEFAULT_CONFIG.copy()
-        except Exception as e:
-            logger.error(f"加载配置文件失败: {e}")
-            return DEFAULT_CONFIG.copy()
-    
-    def save_config(self, config):
-        """保存配置到文件"""
-        try:
-            with open(self.config_file, 'w', encoding='utf-8') as f:
-                json.dump(config, f, indent=4, ensure_ascii=False)
-            return True
-        except Exception as e:
-            logger.error(f"保存配置文件失败: {e}")
-            return False
-    
-    def get(self, key, default=None):
-        """获取配置项"""
-        return self.config.get(key, default)
-    
-    def update(self, new_config):
-        """更新配置"""
-        self.config.update(new_config)
-        return self.save_config(self.config)
-
-# 创建全局配置实例
-plugin_config = PluginConfig()
-
-# 获取当前配置
-def get_stream_url():
-    return plugin_config.get("stream_url", DEFAULT_CONFIG["stream_url"])
 
 def test_stream_connectivity(stream_url, timeout=5):
     """测试视频流连通性，带超时功能"""
@@ -92,6 +30,7 @@ def test_stream_connectivity(stream_url, timeout=5):
     finally:
         if cap is not None:
             cap.release()
+
 
 def capture_img(stream_url, quality=95, resize_width=None):
     """捕获图片，支持质量和尺寸调整"""
@@ -120,6 +59,7 @@ def capture_img(stream_url, quality=95, resize_width=None):
     finally:
         if cap is not None:
             cap.release()
+
 
 def capture_vid(stream_url, duration=10, codec='mp4v'):
     """捕获视频，支持不同编码格式
@@ -222,31 +162,38 @@ def capture_vid(stream_url, duration=10, codec='mp4v'):
         if writer is not None and writer.isOpened():
             writer.release()
 
+
 @register("ipcam", "WhEN", "通过AstrBot实现IPCAM捕获功能", "1.0.0")
 class MyPlugin(Star):
-    def __init__(self, context: Context):
-        super().__init__(context)
-        logger.info("IPCAM 插件已加载")
+    def __init__(self, context: Context, config: AstrBotConfig):
+        """初始化插件
         
-        # 注册 WebUI 路由
-        self.context.router.register_web_ui(
-            route_path="/ipcam",
-            page_name="ipcam_config",
-            page_path="webui_config.html",
-            default_title="IPCAM 配置"
-        )
+        Args:
+            context: AstrBot 上下文
+            config: 插件配置（AstrBot 根据 _conf_schema.json 自动传入）
+        """
+        super().__init__(context)
+        self.config = config  # 保存配置
+        logger.info("IPCAM 插件已加载")
+        logger.info(f"当前配置: stream_url={config.get('stream_url', '未设置')}")
 
     @filter.command("cap_vid")
     async def cap_vid(self, event: AstrMessageEvent):
         """录制视频命令"""
-        stream_url = plugin_config.get("stream_url")
-        video_duration = plugin_config.get("video_duration", 10)
-        video_codec = plugin_config.get("video_codec", "mp4v")
+        stream_url = self.config.get("stream_url")
+        video_duration = self.config.get("video_duration", 10)
+        video_codec = self.config.get("video_codec", "mp4v")
+        connection_timeout = self.config.get("connection_timeout", 5)
+        auto_cleanup = self.config.get("auto_cleanup", True)
+        enable_logging = self.config.get("enable_logging", True)
+        
+        if enable_logging:
+            logger.info(f"开始录制视频: 时长={video_duration}秒, 编码={video_codec}")
         
         yield event.plain_result("正在测试视频流连通性...")
         
         # 测试连通性
-        connected, error_msg = test_stream_connectivity(stream_url)
+        connected, error_msg = test_stream_connectivity(stream_url, timeout=connection_timeout)
         if not connected:
             yield event.plain_result(f"❌ IPCam 连通性测试未通过：{error_msg}")
             return
@@ -263,13 +210,15 @@ class MyPlugin(Star):
             video_msg = Video.fromFileSystem(path=vid)
             yield event.chain_result([video_msg])
             
-            logger.info(f"视频发送成功: {vid}")
+            if enable_logging:
+                logger.info(f"视频发送成功: {vid}")
             
             # 可选：删除本地视频文件以节省空间
-            if plugin_config.get("auto_cleanup", True):
+            if auto_cleanup:
                 try:
                     os.remove(vid)
-                    logger.info(f"本地视频文件已清理: {vid}")
+                    if enable_logging:
+                        logger.info(f"本地视频文件已清理: {vid}")
                 except Exception as e:
                     logger.warning(f"清理本地视频文件失败: {e}")
                 
@@ -280,13 +229,19 @@ class MyPlugin(Star):
     @filter.command("cap_img")
     async def cap_img(self, event: AstrMessageEvent):
         """捕获图片命令"""
-        stream_url = plugin_config.get("stream_url")
-        image_quality = plugin_config.get("image_quality", 90)
-        image_width = plugin_config.get("image_width", 0)
+        stream_url = self.config.get("stream_url")
+        image_quality = self.config.get("image_quality", 90)
+        image_width = self.config.get("image_width", 0)
+        connection_timeout = self.config.get("connection_timeout", 5)
+        auto_cleanup = self.config.get("auto_cleanup", True)
+        enable_logging = self.config.get("enable_logging", True)
+        
+        if enable_logging:
+            logger.info(f"开始捕获图片: 质量={image_quality}, 宽度={image_width}")
         
         yield event.plain_result("正在测试视频流连通性...")
         
-        connected, error_msg = test_stream_connectivity(stream_url)
+        connected, error_msg = test_stream_connectivity(stream_url, timeout=connection_timeout)
         if not connected:
             yield event.plain_result(f"❌ IPCam 连通性测试未通过：{error_msg}")
             return
@@ -301,10 +256,11 @@ class MyPlugin(Star):
             )
             yield event.image_result(img)
             
-            logger.info(f"图像发送成功: {img}")
+            if enable_logging:
+                logger.info(f"图像发送成功: {img}")
             
             # 可选：删除本地图片文件
-            if plugin_config.get("auto_cleanup", True):
+            if auto_cleanup:
                 try:
                     os.remove(img)
                 except Exception as e:
