@@ -1,5 +1,5 @@
 name: astrbot_plugin_ipcam # 这是你的插件的唯一识别名。
 desc: 基于AstrBot方式实现对rtsp视频流的图像截取和视频捕获。 # 插件简短描述
-version: v1.0.0 # 插件版本号。格式：v1.1.1 或者 v1.1
+version: v1.0.1 # 插件版本号。格式：v1.1.1 或者 v1.1
 author: WhEN # 作者 
 repo: https://github.com/rorangeeee/astrbot_plugin_ipcam # 插件的仓库地址

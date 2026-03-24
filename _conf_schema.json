@@ -1,10 +1,10 @@
 {
     "stream_url": {
         "name": "视频流地址",
-        "description": "RTSP 视频流地址",
+        "description": "RTSP/HTTP/HTTPS/RTMP 视频流地址",
         "hint": "示例: rtsp://192.168.1.4:8554/live",
         "type": "string",
-        "default": "rtsp://192.168.1.4:8554/live"
+        "required": true
     },
     "connection_timeout": {
         "name": "连接超时",
