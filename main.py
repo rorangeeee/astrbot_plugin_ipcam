@@ -5,6 +5,7 @@ import re
 import time
 import os
 import uuid
+from typing import Optional
 
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star, register
@@ -349,7 +350,15 @@ class MyPlugin(Star):
         """
         super().__init__(context)
         self.config = config
-        self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=2, thread_name_prefix="ipcam_")
+        self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=3, thread_name_prefix="ipcam_")
+        
+        # 定时任务相关
+        self._schedule_task: Optional[asyncio.Task] = None
+        self._schedule_running = False
+        self._schedule_capture_type: str = "img"  # "img" 或 "vid"
+        self._schedule_video_duration: int = 10  # 定时视频录制时的时长
+        self._schedule_target_id: str = ""  # 定时任务的目标ID（群聊或私聊）
+        self._schedule_is_group: bool = True  # 是否是群聊
         
         logger.info("IPCAM 插件已加载")
         
@@ -500,8 +509,277 @@ class MyPlugin(Star):
                 except OSError as e:
                     logger.warning(f"清理本地图片文件失败: {e}")
     
+    @filter.command("schedulecap_img")
+    async def schedulecap_img(self, event: AstrMessageEvent):
+        """开启定时图片捕获命令"""
+        # 解析参数
+        args = event.get_msg_args()
+        interval_minutes = 60  # 默认60分钟
+        
+        if args:
+            try:
+                interval_minutes = int(args[0])
+                if interval_minutes <= 0:
+                    yield event.plain_result("❌ 间隔时间必须大于0")
+                    return
+            except ValueError:
+                yield event.plain_result("❌ 无效的间隔时间，请输入正整数")
+                return
+        
+        # 停止已有的定时任务
+        await self._stop_schedule_task()
+        
+        # 获取目标ID
+        target_id = str(event.get_group_id()) if event.get_group_id() else str(event.get_user_id())
+        is_group = event.get_group_id() is not None
+        
+        # 启动新的定时任务
+        self._schedule_capture_type = "img"
+        self._schedule_video_duration = self.config.get("video_duration", 10)
+        self._schedule_target_id = target_id
+        self._schedule_is_group = is_group
+        
+        target_type = "群聊" if is_group else "私聊"
+        yield event.plain_result(f"⏰ 已开启定时图片捕获，间隔 {interval_minutes} 分钟，将在 {target_type} 中发送")
+        
+        await self._start_schedule_task("img", interval_minutes, 0)
+    
+    @filter.command("schedulecap_vid")
+    async def schedulecap_vid(self, event: AstrMessageEvent):
+        """开启定时视频录制命令"""
+        # 解析参数
+        args = event.get_msg_args()
+        interval_minutes = 60  # 默认60分钟
+        video_duration = self.config.get("video_duration", 10)  # 默认录制时长
+        
+        if args:
+            try:
+                interval_minutes = int(args[0])
+                if interval_minutes <= 0:
+                    yield event.plain_result("❌ 间隔时间必须大于0")
+                    return
+            except ValueError:
+                yield event.plain_result("❌ 无效的间隔时间，请输入正整数")
+                return
+            
+            if len(args) > 1:
+                try:
+                    video_duration = int(args[1])
+                    if video_duration <= 0 or video_duration > 600:
+                        yield event.plain_result("❌ 视频时长必须在1-600秒之间")
+                        return
+                except ValueError:
+                    yield event.plain_result("❌ 无效的视频时长，请输入正整数")
+                    return
+        
+        # 停止已有的定时任务
+        await self._stop_schedule_task()
+        
+        # 获取目标ID
+        target_id = str(event.get_group_id()) if event.get_group_id() else str(event.get_user_id())
+        is_group = event.get_group_id() is not None
+        
+        # 启动新的定时任务
+        self._schedule_capture_type = "vid"
+        self._schedule_video_duration = video_duration
+        self._schedule_target_id = target_id
+        self._schedule_is_group = is_group
+        
+        target_type = "群聊" if is_group else "私聊"
+        yield event.plain_result(f"⏰ 已开启定时视频录制，间隔 {interval_minutes} 分钟，时长 {video_duration} 秒，将在 {target_type} 中发送")
+        
+        await self._start_schedule_task("vid", interval_minutes, 0)
+    
+    async def _start_schedule_task(self, capture_type: str, interval_minutes: int, initial_delay: int = 0):
+        """启动定时任务
+        
+        Args:
+            capture_type: 捕获类型 "img" 或 "vid"
+            interval_minutes: 间隔时间（分钟）
+            initial_delay: 初始延迟（秒），0 表示立即执行
+        """
+        if self._schedule_running:
+            logger.warning("定时任务已在运行中")
+            return
+        
+        self._schedule_running = True
+        self._schedule_capture_type = capture_type
+        
+        async def schedule_loop():
+            """定时任务循环"""
+            while self._schedule_running:
+                try:
+                    # 初始延迟
+                    if initial_delay > 0:
+                        await asyncio.sleep(initial_delay)
+                    else:
+                        # 立即执行第一次
+                        pass
+                    
+                    while self._schedule_running:
+                        # 执行捕获
+                        await self._execute_scheduled_capture()
+                        
+                        # 等待间隔
+                        wait_seconds = interval_minutes * 60
+                        logger.info(f"定时任务等待 {interval_minutes} 分钟后下次执行")
+                        
+                        # 分段等待，以便能及时响应停止信号
+                        for _ in range(wait_seconds):
+                            if not self._schedule_running:
+                                break
+                            await asyncio.sleep(1)
+                
+                except asyncio.CancelledError:
+                    logger.info("定时任务被取消")
+                    break
+                except Exception as e:
+                    logger.error(f"定时任务执行出错: {type(e).__name__}: {str(e)}")
+                    # 出错后等待1分钟再重试
+                    for _ in range(60):
+                        if not self._schedule_running:
+                            break
+                        await asyncio.sleep(1)
+        
+        self._schedule_task = asyncio.create_task(schedule_loop())
+        logger.info(f"定时任务已启动: 类型={capture_type}, 间隔={interval_minutes}分钟")
+    
+    async def _stop_schedule_task(self):
+        """停止定时任务"""
+        if not self._schedule_running and self._schedule_task is None:
+            return
+        
+        self._schedule_running = False
+        
+        if self._schedule_task:
+            self._schedule_task.cancel()
+            try:
+                await self._schedule_task
+            except asyncio.CancelledError:
+                pass
+            self._schedule_task = None
+        
+        logger.info("定时任务已停止")
+    
+    async def _execute_scheduled_capture(self):
+        """执行定时捕获"""
+        stream_url = self.config.get("stream_url")
+        
+        # 验证 stream_url
+        is_valid, error_msg = _validate_stream_url(stream_url)
+        if not is_valid:
+            logger.error(f"定时捕获失败: {error_msg}")
+            return
+        
+        enable_logging = self.config.get("enable_logging", True)
+        auto_cleanup = self.config.get("auto_cleanup", True)
+        
+        loop = asyncio.get_event_loop()
+        data_dir = await loop.run_in_executor(self._executor, _get_data_dir, self.context)
+        
+        try:
+            if self._schedule_capture_type == "img":
+                # 捕获图片
+                image_quality = self.config.get("image_quality", 90)
+                image_width = self.config.get("image_width", 0)
+                connection_timeout = self.config.get("connection_timeout", 5)
+                
+                if enable_logging:
+                    logger.info("定时任务: 开始捕获图片...")
+                
+                img = await loop.run_in_executor(
+                    self._executor,
+                    capture_img,
+                    stream_url,
+                    image_quality,
+                    image_width if image_width > 0 else None,
+                    connection_timeout,
+                    data_dir
+                )
+                
+                # 发送图片到目标
+                await self._send_image_to_target(img)
+                
+                if enable_logging:
+                    logger.info(f"定时任务: 图片发送成功")
+                
+                # 清理
+                if auto_cleanup and os.path.exists(img):
+                    try:
+                        os.remove(img)
+                    except OSError as e:
+                        logger.warning(f"清理本地图片文件失败: {e}")
+                
+            else:  # "vid"
+                # 录制视频
+                video_duration = self._schedule_video_duration
+                video_codec = self.config.get("video_codec", "mp4v")
+                connection_timeout = self.config.get("connection_timeout", 5)
+                
+                if enable_logging:
+                    logger.info(f"定时任务: 开始录制视频({video_duration}秒)...")
+                
+                vid = await loop.run_in_executor(
+                    self._executor,
+                    capture_vid,
+                    stream_url,
+                    video_duration,
+                    video_codec,
+                    connection_timeout,
+                    data_dir
+                )
+                
+                # 发送视频到目标
+                await self._send_video_to_target(vid)
+                
+                if enable_logging:
+                    logger.info(f"定时任务: 视频发送成功")
+                
+                # 清理
+                if auto_cleanup and os.path.exists(vid):
+                    try:
+                        os.remove(vid)
+                    except OSError as e:
+                        logger.warning(f"清理本地视频文件失败: {e}")
+        
+        except Exception as e:
+            logger.error(f"定时捕获执行失败: {type(e).__name__}: {str(e)}")
+    
+    async def _send_image_to_target(self, img_path: str):
+        """发送图片到定时任务的目标"""
+        try:
+            from astrbot.api.message_components import Image
+            image_msg = Image.fromFileSystem(path=img_path)
+            
+            if self._schedule_is_group:
+                await self.context.send_group_message(self._schedule_target_id, [image_msg])
+                logger.info(f"定时任务: 图片已发送到群组 {self._schedule_target_id}")
+            else:
+                await self.context.send_private_message(self._schedule_target_id, [image_msg])
+                logger.info(f"定时任务: 图片已发送到用户 {self._schedule_target_id}")
+        except Exception as e:
+            logger.error(f"定时任务: 发送图片失败: {e}")
+    
+    async def _send_video_to_target(self, vid_path: str):
+        """发送视频到定时任务的目标"""
+        try:
+            from astrbot.api.message_components import Video
+            video_msg = Video.fromFileSystem(path=vid_path)
+            
+            if self._schedule_is_group:
+                await self.context.send_group_message(self._schedule_target_id, [video_msg])
+                logger.info(f"定时任务: 视频已发送到群组 {self._schedule_target_id}")
+            else:
+                await self.context.send_private_message(self._schedule_target_id, [video_msg])
+                logger.info(f"定时任务: 视频已发送到用户 {self._schedule_target_id}")
+        except Exception as e:
+            logger.error(f"定时任务: 发送视频失败: {e}")
+    
     async def terminate(self):
         """插件销毁时调用"""
+        # 停止定时任务
+        await self._stop_schedule_task()
+        
         # 关闭线程池
         self._executor.shutdown(wait=False)
         logger.info("IPCAM 插件已卸载")
