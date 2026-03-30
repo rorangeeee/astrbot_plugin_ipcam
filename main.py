@@ -81,11 +81,6 @@ def _validate_video_params(width: int, height: int, fps: float) -> tuple[bool, s
     if width <= 0 or height <= 0:
         return False, f"无效的视频分辨率: {width}x{height}，请检查视频流", 0, 0, 0.0
     
-    # 限制最大分辨率防止资源耗尽
-    max_dimension = 3840
-    if width > max_dimension or height > max_dimension:
-        return False, f"视频分辨率过大 ({width}x{height})，最大支持 {max_dimension}x{max_dimension}", 0, 0, 0.0
-    
     # 校验 FPS
     validated_fps = fps
     if fps <= 0 or fps > 60:
@@ -120,8 +115,6 @@ def capture_img(stream_url: str, quality: int = 95, resize_width: int | None = N
     if resize_width is not None:
         if not isinstance(resize_width, int) or resize_width <= 0:
             raise ValueError(f"无效的宽度值: {resize_width}")
-        if resize_width > 8192:
-            raise ValueError(f"宽度值过大: {resize_width}，最大支持 8192")
     
     cap = None
     try:
@@ -510,85 +503,66 @@ class MyPlugin(Star):
                     logger.warning(f"清理本地图片文件失败: {e}")
     
     @filter.command("schedulecap_img")
-    async def schedulecap_img(self, event: AstrMessageEvent):
+    async def schedulecap_img(self, event: AstrMessageEvent, interval: int | None = None):
         """开启定时图片捕获命令"""
-        # 解析参数
-        args = event.get_msg_args()
-        interval_minutes = 60  # 默认60分钟
-        
-        if args:
-            try:
-                interval_minutes = int(args[0])
-                if interval_minutes <= 0:
-                    yield event.plain_result("❌ 间隔时间必须大于0")
-                    return
-            except ValueError:
-                yield event.plain_result("❌ 无效的间隔时间，请输入正整数")
-                return
+        # 参数校验
+        interval_minutes = interval if interval is not None else 60
+        if interval_minutes <= 0:
+            yield event.plain_result("❌ 间隔时间必须大于0")
+            return
         
         # 停止已有的定时任务
         await self._stop_schedule_task()
         
-        # 获取目标ID
-        target_id = str(event.get_group_id()) if event.get_group_id() else str(event.get_user_id())
-        is_group = event.get_group_id() is not None
+        # 获取目标session
+        self._schedule_target_id = event.unified_msg_origin
+        self._schedule_is_group = event.get_group_id() is not None
         
         # 启动新的定时任务
         self._schedule_capture_type = "img"
         self._schedule_video_duration = self.config.get("video_duration", 10)
-        self._schedule_target_id = target_id
-        self._schedule_is_group = is_group
         
-        target_type = "群聊" if is_group else "私聊"
-        yield event.plain_result(f"⏰ 已开启定时图片捕获，间隔 {interval_minutes} 分钟，将在 {target_type} 中发送")
+        yield event.plain_result(f"⏰ 已开启定时图片捕获，间隔 {interval_minutes} 分钟")
         
         await self._start_schedule_task("img", interval_minutes, 0)
     
     @filter.command("schedulecap_vid")
-    async def schedulecap_vid(self, event: AstrMessageEvent):
+    async def schedulecap_vid(self, event: AstrMessageEvent, interval: int | None = None, duration: int | None = None):
         """开启定时视频录制命令"""
-        # 解析参数
-        args = event.get_msg_args()
-        interval_minutes = 60  # 默认60分钟
-        video_duration = self.config.get("video_duration", 10)  # 默认录制时长
+        interval_minutes = interval if interval is not None else 60
+        video_duration = duration if duration is not None else self.config.get("video_duration", 10)
         
-        if args:
-            try:
-                interval_minutes = int(args[0])
-                if interval_minutes <= 0:
-                    yield event.plain_result("❌ 间隔时间必须大于0")
-                    return
-            except ValueError:
-                yield event.plain_result("❌ 无效的间隔时间，请输入正整数")
-                return
-            
-            if len(args) > 1:
-                try:
-                    video_duration = int(args[1])
-                    if video_duration <= 0 or video_duration > 600:
-                        yield event.plain_result("❌ 视频时长必须在1-600秒之间")
-                        return
-                except ValueError:
-                    yield event.plain_result("❌ 无效的视频时长，请输入正整数")
-                    return
+        if interval_minutes <= 0:
+            yield event.plain_result("❌ 间隔时间必须大于0")
+            return
+        if video_duration <= 0 or video_duration > 600:
+            yield event.plain_result("❌ 视频时长必须在1-600秒之间")
+            return
         
         # 停止已有的定时任务
         await self._stop_schedule_task()
         
-        # 获取目标ID
-        target_id = str(event.get_group_id()) if event.get_group_id() else str(event.get_user_id())
-        is_group = event.get_group_id() is not None
+        # 获取目标session
+        self._schedule_target_id = event.unified_msg_origin
+        self._schedule_is_group = event.get_group_id() is not None
         
         # 启动新的定时任务
         self._schedule_capture_type = "vid"
         self._schedule_video_duration = video_duration
-        self._schedule_target_id = target_id
-        self._schedule_is_group = is_group
         
-        target_type = "群聊" if is_group else "私聊"
-        yield event.plain_result(f"⏰ 已开启定时视频录制，间隔 {interval_minutes} 分钟，时长 {video_duration} 秒，将在 {target_type} 中发送")
+        yield event.plain_result(f"⏰ 已开启定时视频录制，间隔 {interval_minutes} 分钟，时长 {video_duration} 秒")
         
         await self._start_schedule_task("vid", interval_minutes, 0)
+    
+    @filter.command("schedulecap_off")
+    async def schedulecap_off(self, event: AstrMessageEvent):
+        """取消定时捕获任务"""
+        if not self._schedule_running:
+            yield event.plain_result("❌ 当前没有正在运行的定时任务")
+            return
+        
+        await self._stop_schedule_task()
+        yield event.plain_result("✅ 定时捕获任务已取消")
     
     async def _start_schedule_task(self, capture_type: str, interval_minutes: int, initial_delay: int = 0):
         """启动定时任务
@@ -749,14 +723,11 @@ class MyPlugin(Star):
         """发送图片到定时任务的目标"""
         try:
             from astrbot.api.message_components import Image
+            from astrbot.core.message.message_event_result import MessageChain
             image_msg = Image.fromFileSystem(path=img_path)
-            
-            if self._schedule_is_group:
-                await self.context.send_group_message(self._schedule_target_id, [image_msg])
-                logger.info(f"定时任务: 图片已发送到群组 {self._schedule_target_id}")
-            else:
-                await self.context.send_private_message(self._schedule_target_id, [image_msg])
-                logger.info(f"定时任务: 图片已发送到用户 {self._schedule_target_id}")
+            chain = MessageChain([image_msg])
+            await self.context.send_message(self._schedule_target_id, chain)
+            logger.info(f"定时任务: 图片已发送到 {self._schedule_target_id}")
         except Exception as e:
             logger.error(f"定时任务: 发送图片失败: {e}")
     
@@ -764,14 +735,11 @@ class MyPlugin(Star):
         """发送视频到定时任务的目标"""
         try:
             from astrbot.api.message_components import Video
+            from astrbot.core.message.message_event_result import MessageChain
             video_msg = Video.fromFileSystem(path=vid_path)
-            
-            if self._schedule_is_group:
-                await self.context.send_group_message(self._schedule_target_id, [video_msg])
-                logger.info(f"定时任务: 视频已发送到群组 {self._schedule_target_id}")
-            else:
-                await self.context.send_private_message(self._schedule_target_id, [video_msg])
-                logger.info(f"定时任务: 视频已发送到用户 {self._schedule_target_id}")
+            chain = MessageChain([video_msg])
+            await self.context.send_message(self._schedule_target_id, chain)
+            logger.info(f"定时任务: 视频已发送到 {self._schedule_target_id}")
         except Exception as e:
             logger.error(f"定时任务: 发送视频失败: {e}")
     
